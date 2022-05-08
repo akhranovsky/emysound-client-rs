@@ -46,8 +46,6 @@ struct Args {
     command: Commands,
 }
 
-static FILE: &[u8] = include_bytes!("../testdata/reference.mp3");
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     SimpleLogger::new().init().unwrap();
@@ -90,7 +88,7 @@ async fn insert_track(
     let file_name = path
         .file_name()
         .map(|filename| filename.to_string_lossy().into_owned())
-        .ok_or(anyhow!("Track path is invalid, can't extract the filename"))?;
+        .ok_or_else(|| anyhow!("Track path is invalid, can't extract the filename"))?;
 
     log::info!("Track filename: {}", file_name);
 
@@ -104,7 +102,7 @@ async fn insert_track(
         format!("{artist}:{title}:{meta}").as_bytes(),
     );
 
-    let track_id = format!("{artist} {title} {}", uuid.to_string());
+    let track_id = format!("{artist} {title} {meta} {uuid}");
 
     log::info!("Track id: {track_id}");
 
