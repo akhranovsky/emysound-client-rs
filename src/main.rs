@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context};
 use clap::{Parser, Subcommand};
 use error_chain::error_chain;
+use log::LevelFilter;
 use reqwest::header::{HeaderMap, ACCEPT};
 use reqwest::multipart::Part;
 use reqwest::StatusCode;
@@ -48,7 +49,10 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    SimpleLogger::new().init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Info)
+        .init()
+        .unwrap();
 
     log::info!("Start application");
 
@@ -155,6 +159,68 @@ async fn insert_track(
     }
 }
 
-async fn query_track(file: PathBuf) -> anyhow::Result<Vec<String>> {
-    Ok(vec![])
+async fn query_track(path: PathBuf) -> anyhow::Result<Vec<String>> {
+    log::info!("Querying track {path:?}");
+
+    let file_name = path
+        .file_name()
+        .map(|filename| filename.to_string_lossy().into_owned())
+        .ok_or_else(|| anyhow!("Track path is invalid, can't extract the filename"))?;
+
+    log::info!("Track filename: {}", file_name);
+
+    log::info!("Reading track file...");
+
+    let content = tokio::fs::read(&path).await.context("Reading track file")?;
+    let content_length = content.len();
+
+    let headers = {
+        let mut h = HeaderMap::new();
+        h.insert(ACCEPT, "application/json".parse()?);
+        h
+    };
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        Part::stream_with_length(content, content_length as u64)
+            .file_name(file_name)
+            .mime_str("application/octet-stream")?,
+    );
+
+    let client = reqwest::Client::new();
+
+    log::info!("Sending request to EmySound");
+
+    let res = client
+        .post("http://localhost:3340/api/v1.1/Query")
+        .basic_auth("ADMIN", Some(""))
+        .headers(headers)
+        .query(&[
+            ("mediaType", "Audio"),
+            ("minConfidence", "0.2"),
+            ("minCoverage", "0"),
+            ("registerMatches", "true"),
+        ])
+        .multipart(form)
+        .send()
+        .await?;
+
+    log::info!("Response {}", res.status());
+
+    match res.status() {
+        StatusCode::OK => {
+            log::info!("Query succeeded!");
+            let results = res.text().await.context("Decode response body failed")?;
+            println!("{results}");
+            Ok(vec![])
+        }
+        _ => {
+            log::info!("Query failed.");
+            bail!(
+                "Failed to query track {} {}",
+                res.status(),
+                res.text().await?
+            );
+        }
+    }
 }
