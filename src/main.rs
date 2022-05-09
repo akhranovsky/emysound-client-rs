@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 use error_chain::error_chain;
 use log::LevelFilter;
@@ -78,8 +78,6 @@ async fn main() -> anyhow::Result<()> {
     ])
     .unwrap();
 
-    log::info!("Start application");
-
     match args.command {
         Commands::Insert {
             file,
@@ -87,33 +85,51 @@ async fn main() -> anyhow::Result<()> {
             title,
             meta,
         } => {
-            insert_track(file.as_path(), artist, title, meta)
+            match insert_track(file.as_path(), artist, title, meta)
                 .await
-                .context("Failed to insert track {file}")?;
-            Ok(())
-        }
-        Commands::Query { file } => {
-            let results = query_track(file)
-                .await
-                .context("Failed to query track {file}")?;
-
-            log::info!("{results:?}");
-
-            for result in &results {
-                println!(
-                    "{:0.3}",
-                    result
-                        .audio
-                        .as_ref()
-                        .and_then(|m| m.coverage.query_coverage)
-                        .unwrap_or_default()
-                )
+                .context("Failed to insert track {file}")
+            {
+                Ok(id) => {
+                    log::info!("Track inserted {id}");
+                    println!("{id}");
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!("Failed to insert track {e}");
+                    Err(e)
+                }
             }
+        }
 
-            if results.is_empty() {
-                bail!("No results")
-            } else {
-                Ok(())
+        Commands::Query { file } => {
+            match query_track(file)
+                .await
+                .context("Failed to query track {file}")
+            {
+                Ok(results) => {
+                    log::info!("{results:?}");
+
+                    for result in &results {
+                        println!(
+                            "{:0.3}",
+                            result
+                                .audio
+                                .as_ref()
+                                .and_then(|m| m.coverage.query_coverage)
+                                .unwrap_or_default()
+                        )
+                    }
+                    if results.is_empty() {
+                        log::info!("No results.");
+                        Err(anyhow!("No results"))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(e) => {
+                    log::error!("{e}");
+                    Err(e)
+                }
             }
         }
     }
@@ -176,20 +192,14 @@ async fn insert_track(
         .send()
         .await?;
 
-    log::info!("Response {}", res.status());
+    let status = res.status();
 
-    match res.status() {
-        StatusCode::OK => {
-            log::info!("Track inserted!");
-            Ok(uuid)
-        }
+    match status {
+        StatusCode::OK => Ok(uuid),
         _ => {
-            log::info!("Failed to insert track.");
-            bail!(
-                "Failed to insert track {} {}",
-                res.status(),
-                res.text().await?
-            );
+            let text = res.text().await?;
+            log::error!("Failed to insert track {status} {text}");
+            Err(anyhow!("Failed to insert track {status} {text}"))
         }
     }
 }
@@ -202,9 +212,9 @@ async fn query_track(path: PathBuf) -> anyhow::Result<Vec<QueryResult>> {
         .map(|filename| filename.to_string_lossy().into_owned())
         .ok_or_else(|| anyhow!("Track path is invalid, can't extract the filename"))?;
 
-    log::info!("Track filename: {}", file_name);
+    log::debug!("Track filename: {}", file_name);
 
-    log::info!("Reading track file...");
+    log::debug!("Reading track file...");
 
     let content = tokio::fs::read(&path).await.context("Reading track file")?;
     let content_length = content.len();
@@ -240,20 +250,17 @@ async fn query_track(path: PathBuf) -> anyhow::Result<Vec<QueryResult>> {
         .send()
         .await?;
 
-    log::info!("Response {}", res.status());
+    let status = res.status();
 
-    match res.status() {
+    match status {
         StatusCode::OK => {
-            log::info!("Query succeeded!");
+            log::info!("Query succeded.");
             res.json().await.context("Decode response body failed")
         }
         _ => {
-            log::info!("Query failed.");
-            bail!(
-                "Failed to query track {} {}",
-                res.status(),
-                res.text().await?
-            );
+            let text = res.text().await?;
+            log::error!("Failed to query track {status} {text}");
+            Err(anyhow!("Failed to query track {status} {text}"))
         }
     }
 }
