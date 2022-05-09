@@ -8,7 +8,6 @@ use reqwest::header::{HeaderMap, ACCEPT};
 use reqwest::multipart::Part;
 use reqwest::StatusCode;
 use serde::Deserialize;
-use simple_logger::SimpleLogger;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -55,15 +54,29 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    SimpleLogger::new().init().unwrap();
-
     let args = Args::parse();
 
-    log::set_max_level(if args.quiet {
-        LevelFilter::Error
-    } else {
-        LevelFilter::Info
-    });
+    simplelog::CombinedLogger::init(vec![
+        simplelog::TermLogger::new(
+            if args.quiet {
+                LevelFilter::Error
+            } else {
+                LevelFilter::Info
+            },
+            simplelog::Config::default(),
+            simplelog::TerminalMode::Mixed,
+            simplelog::ColorChoice::Auto,
+        ),
+        simplelog::WriteLogger::new(
+            LevelFilter::Info,
+            simplelog::Config::default(),
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("emysound-client.log")?,
+        ),
+    ])
+    .unwrap();
 
     log::info!("Start application");
 
