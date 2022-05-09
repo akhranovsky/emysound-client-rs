@@ -46,20 +46,26 @@ enum Commands {
 
 #[derive(Parser, Debug)]
 struct Args {
+    /// Show only match scores and errors.
+    #[clap(short, long)]
+    quiet: bool,
     #[clap(subcommand)]
     command: Commands,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    SimpleLogger::new()
-        .with_level(LevelFilter::Info)
-        .init()
-        .unwrap();
-
-    log::info!("Start application");
+    SimpleLogger::new().init().unwrap();
 
     let args = Args::parse();
+
+    log::set_max_level(if args.quiet {
+        LevelFilter::Error
+    } else {
+        LevelFilter::Info
+    });
+
+    log::info!("Start application");
 
     match args.command {
         Commands::Insert {
@@ -71,7 +77,6 @@ async fn main() -> anyhow::Result<()> {
             insert_track(file.as_path(), artist, title, meta)
                 .await
                 .context("Failed to insert track {file}")?;
-            println!("Track inserted successfully.");
             Ok(())
         }
         Commands::Query { file } => {
