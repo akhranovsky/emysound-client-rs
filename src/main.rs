@@ -72,16 +72,33 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .context("Failed to insert track {file}")?;
             println!("Track inserted successfully.");
+            Ok(())
         }
         Commands::Query { file } => {
             let results = query_track(file)
                 .await
                 .context("Failed to query track {file}")?;
-            println!("Results: {:?}", results);
+
+            log::info!("{results:?}");
+
+            for result in &results {
+                println!(
+                    "{:0.3}",
+                    result
+                        .audio
+                        .as_ref()
+                        .and_then(|m| m.coverage.query_coverage)
+                        .unwrap_or_default()
+                )
+            }
+
+            if results.is_empty() {
+                bail!("No results")
+            } else {
+                Ok(())
+            }
         }
     }
-
-    Ok(())
 }
 
 async fn insert_track(
@@ -159,7 +176,7 @@ async fn insert_track(
     }
 }
 
-async fn query_track(path: PathBuf) -> anyhow::Result<Vec<String>> {
+async fn query_track(path: PathBuf) -> anyhow::Result<Vec<QueryResult>> {
     log::info!("Querying track {path:?}");
 
     let file_name = path
@@ -210,9 +227,7 @@ async fn query_track(path: PathBuf) -> anyhow::Result<Vec<String>> {
     match res.status() {
         StatusCode::OK => {
             log::info!("Query succeeded!");
-            let results = res.text().await.context("Decode response body failed")?;
-            println!("{results}");
-            Ok(vec![])
+            res.json().await.context("Decode response body failed")
         }
         _ => {
             log::info!("Query failed.");
