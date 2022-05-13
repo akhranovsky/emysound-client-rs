@@ -102,9 +102,9 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Query { file } => {
-            match query_track(file)
+            match query_track(file.clone())
                 .await
-                .context("Failed to query track {file}")
+                .context(format!("Failed to query track {:?}", file))
             {
                 Ok(results) => {
                     log::info!("{results:?}");
@@ -212,7 +212,7 @@ async fn query_track(path: PathBuf) -> anyhow::Result<Vec<QueryResult>> {
         .map(|filename| filename.to_string_lossy().into_owned())
         .ok_or_else(|| anyhow!("Track path is invalid, can't extract the filename"))?;
 
-    log::debug!("Track filename: {}", file_name);
+    log::debug!("Track filename: {file_name}");
 
     log::debug!("Reading track file...");
 
