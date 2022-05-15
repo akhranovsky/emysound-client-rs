@@ -1,40 +1,65 @@
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Context, Result};
+use bytes::Bytes;
 use reqwest::header::{HeaderMap, ACCEPT};
 use reqwest::multipart::{Form, Part};
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::fmt::Display;
+use std::path::Path;
 use uuid::Uuid;
 
 const EMYSOUND_API: &str = "http://localhost:3340/api/v1.1/";
 
-pub async fn insert(path: &Path, artist: String, title: String) -> Result<Uuid> {
+#[derive(Debug, Clone)]
+pub enum MediaSource<'a> {
+    File(&'a Path),
+    Bytes(&'a str, &'a Bytes),
+}
+
+impl<'a> Display for MediaSource<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::File(path) => f.write_fmt(format_args!("path={:?}", path)),
+            Self::Bytes(file_name, bytes) => f.write_fmt(format_args!(
+                "bytes, filename={file_name} len={}",
+                bytes.len()
+            )),
+        }
+    }
+}
+
+pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> Result<Uuid> {
     const TARGET: &str = "emysound::insert";
 
-    log::debug!(
-        target: TARGET,
-        "path={path:?}, artist={artist}, title={title}"
-    );
+    log::debug!(target: TARGET, "{source}, artist={artist}, title={title}",);
 
-    let file_name = path
-        .file_name()
-        .map(|filename| filename.to_string_lossy().into_owned())
-        .ok_or_else(|| {
-            log::error!(
-                target: TARGET,
-                "Can't extract the filename from path={:?}",
-                path
-            );
-            anyhow!("Track path is invalid, can't extract the filename")
-        })?;
+    let file_name = match source {
+        MediaSource::File(path) => path
+            .file_name()
+            .map(|filename| filename.to_string_lossy().to_string())
+            .ok_or_else(|| {
+                log::error!(
+                    target: TARGET,
+                    "Can't extract the filename from path={:?}",
+                    path
+                );
+                anyhow!("Track path is invalid, can't extract the filename")
+            })?,
+        MediaSource::Bytes(file_name, _) => file_name.to_string(),
+    };
 
     log::debug!(target: TARGET, "Track filename: {}", file_name);
 
-    log::debug!(target: TARGET, "Reading track file...");
+    let content = match source {
+        MediaSource::File(path) => {
+            log::debug!(target: TARGET, "Reading track file...");
+            tokio::fs::read(&path).await.context("Reading track file")?
+        }
+        MediaSource::Bytes(_, bytes) => bytes.to_vec(),
+    };
 
-    let content = tokio::fs::read(&path).await.context("Reading track file")?;
     let content_length = content.len();
 
     let track_id = Uuid::new_v4();
@@ -83,27 +108,35 @@ pub async fn insert(path: &Path, artist: String, title: String) -> Result<Uuid> 
     }
 }
 
-pub async fn query(path: PathBuf) -> Result<Vec<QueryResult>> {
+pub async fn query(source: MediaSource<'_>) -> Result<Vec<QueryResult>> {
     const TARGET: &str = "emysound::query";
-    log::debug!(target: TARGET, "path={path:?}");
+    log::debug!(target: TARGET, "{source}",);
 
-    let file_name = path
-        .file_name()
-        .map(|filename| filename.to_string_lossy().into_owned())
-        .ok_or_else(|| {
-            log::error!(
-                target: TARGET,
-                "Can't extract the filename from path={:?}",
-                path
-            );
-            anyhow!("Track path is invalid, can't extract the filename")
-        })?;
+    let file_name = match source {
+        MediaSource::File(path) => path
+            .file_name()
+            .map(|filename| filename.to_string_lossy().to_string())
+            .ok_or_else(|| {
+                log::error!(
+                    target: TARGET,
+                    "Can't extract the filename from path={:?}",
+                    path
+                );
+                anyhow!("Track path is invalid, can't extract the filename")
+            })?,
+        MediaSource::Bytes(file_name, _) => file_name.to_string(),
+    };
 
     log::debug!(target: TARGET, "Track filename: {}", file_name);
 
-    log::debug!(target: TARGET, "Reading track file...");
+    let content = match source {
+        MediaSource::File(path) => {
+            log::debug!(target: TARGET, "Reading track file...");
+            tokio::fs::read(&path).await.context("Reading track file")?
+        }
+        MediaSource::Bytes(_, bytes) => bytes.to_vec(),
+    };
 
-    let content = tokio::fs::read(&path).await.context("Reading track file")?;
     let content_length = content.len();
 
     let headers = {
