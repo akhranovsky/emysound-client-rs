@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use bytes::Bytes;
 use reqwest::header::{HeaderMap, ACCEPT};
 use reqwest::multipart::{Form, Part};
@@ -108,7 +108,12 @@ pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> R
     }
 }
 
-pub async fn query(source: MediaSource<'_>) -> Result<Vec<QueryResult>> {
+pub async fn query(source: MediaSource<'_>, min_confidence: f32) -> Result<Vec<QueryResult>> {
+    ensure!(
+        min_confidence >= 0f32 && min_confidence <= 1f32,
+        "Min confidence must be between 0 and 1"
+    );
+
     const TARGET: &str = "emysound::query";
     log::debug!(target: TARGET, "{source}",);
 
@@ -166,8 +171,7 @@ pub async fn query(source: MediaSource<'_>) -> Result<Vec<QueryResult>> {
         .headers(headers)
         .query(&[
             ("mediaType", "Audio"),
-            ("minConfidence", "0.2"),
-            ("minCoverage", "0"),
+            ("minCoverage", &min_confidence.to_string()),
             ("registerMatches", "true"),
         ])
         .multipart(form)
