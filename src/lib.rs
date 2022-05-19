@@ -30,7 +30,12 @@ impl<'a> Display for MediaSource<'a> {
     }
 }
 
-pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> Result<Uuid> {
+pub async fn insert(
+    source: MediaSource<'_>,
+    id: Uuid,
+    artist: String,
+    title: String,
+) -> Result<()> {
     const TARGET: &str = "emysound::insert";
 
     log::debug!(target: TARGET, "{source}, artist={artist}, title={title}",);
@@ -62,10 +67,6 @@ pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> R
 
     let content_length = content.len();
 
-    let track_id = Uuid::new_v4();
-
-    log::debug!(target: TARGET, "Track id: {track_id}");
-
     let headers = {
         let mut h = HeaderMap::new();
         h.insert(ACCEPT, "application/json".parse()?);
@@ -73,7 +74,7 @@ pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> R
     };
 
     let form = Form::new()
-        .text("Id", track_id.to_string())
+        .text("Id", id.to_string())
         .text("Artist", artist)
         .text("Title", title)
         .text("MediaType", "Audio")
@@ -99,7 +100,7 @@ pub async fn insert(source: MediaSource<'_>, artist: String, title: String) -> R
     let status = res.status();
 
     match status {
-        StatusCode::OK => Ok(track_id),
+        StatusCode::OK => Ok(()),
         _ => {
             let text = res.text().await?;
             log::error!(target: TARGET, "Failed to insert track {status} {text}");
