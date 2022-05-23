@@ -2,10 +2,9 @@
 
 use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
+use emycloud_client_rs::{insert, query, MediaSource};
 use log::LevelFilter;
 use std::path::PathBuf;
-
-use emycloud_client_rs::{insert, query, MediaSource};
 
 #[derive(Debug, Subcommand)]
 enum Commands {
@@ -57,11 +56,13 @@ async fn main() -> anyhow::Result<()> {
             artist,
             title,
         } => {
-            match insert(MediaSource::File(file.as_path()), artist, title)
+            let id = uuid::Uuid::new_v4();
+
+            match insert(MediaSource::File(file.as_path()), id, artist, title)
                 .await
                 .context("Failed to insert track {file}")
             {
-                Ok(id) => {
+                Ok(()) => {
                     println!("{id}");
                     Ok(())
                 }
@@ -73,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Query { file } => {
-            match query(MediaSource::File(file.as_path()))
+            match query(MediaSource::File(file.as_path()), 0.2f32)
                 .await
                 .context(format!("Failed to query track {:?}", file))
             {

@@ -111,7 +111,7 @@ pub async fn insert(
 
 pub async fn query(source: MediaSource<'_>, min_confidence: f32) -> Result<Vec<QueryResult>> {
     ensure!(
-        min_confidence >= 0f32 && min_confidence <= 1f32,
+        (0f32..=1f32).contains(&min_confidence),
         "Min confidence must be between 0 and 1"
     );
 
@@ -173,7 +173,7 @@ pub async fn query(source: MediaSource<'_>, min_confidence: f32) -> Result<Vec<Q
         .query(&[
             ("mediaType", "Audio"),
             ("minCoverage", &min_confidence.to_string()),
-            ("registerMatches", "true"),
+            // ("registerMatches", "true"),
         ])
         .multipart(form)
         .send()
